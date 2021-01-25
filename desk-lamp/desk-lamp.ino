@@ -7,14 +7,31 @@
  #include <avr/power.h> // Required for 16 MHz Adafruit Trinket
 #endif
 
-// LED strip constants and object
+/*
+ * LED strip constants and object
+ */
 #define LED_PIN   9
-#define LED_COUNT 60
+#define LED_COUNT 60                    // same as using strip.numPixels(), but probably faster
 #define BRIGHTNESS 20
-#define DELAY_TIME 25
 Adafruit_NeoPixel strip(LED_COUNT, LED_PIN, NEO_GRB + NEO_KHZ800);
 
-// button pins and button LED pins
+
+/*
+ * constants needed for creating rainbow color effects
+ * 
+ * RAINBOW_RESOLUTION_FACTOR controls how finely the color 
+ * wheel is divided (must be at least 1). If set to 1, you
+ * have just enough color resolution to make each LED a
+ * different color of the rainbow
+ */
+#define COLOR_WHEEL_LEN 65536           // for rainbow effects that use color wheel
+#define RAINBOW_RESOLUTION_FACTOR 4     
+#define NUM_RAINBOW_COLORS (LED_COUNT * RAINBOW_RESOLUTION_FACTOR)
+
+
+/*
+ * button pins and button LED pins
+ */
 #define BUTTON_RED        12        // change color
 #define BUTTON_RED_LED    A3
 #define BUTTON_WHITE      11        // change effect
@@ -22,42 +39,41 @@ Adafruit_NeoPixel strip(LED_COUNT, LED_PIN, NEO_GRB + NEO_KHZ800);
 #define BUTTON_GREEN      10        // start pomodoro timer
 #define BUTTON_GREEN_LED  A5
 
+
 /*
  * create array of effect functions to easily cycle through
  * NOTE: problem with this method is that every function has
  * to have the same function signature (unused parameters at times)
  */
-#define NUM_OF_EFFECTS 4                  // used to wrap effectIndex back to first effect
-typedef void (*func_pointer)(uint32_t, int);
-void colorWipe(uint32_t, int);            // function prototypes for all effect functions
-void theaterChase(uint32_t, int);
-void rainbow(uint32_t, int);
-void theaterChaseRainbow(uint32_t, int);
+#define NUM_OF_EFFECTS 2                  // used to wrap effectIndex back to first effect
+typedef void (*func_pointer)(uint32_t);
+void linearFill(uint32_t);            // function prototypes for all effect functions
+void rainbowFull(uint32_t);
 const func_pointer EFFECTS[] = {          // array of pointers to each effect function
-  colorWipe,
-  theaterChase,
-  rainbow,
-  theaterChaseRainbow
+  linearFill,
+  rainbowFull
 };
 
 
 /*
  * variables used in interrupt service routine
  */
-volatile bool endEffect = false;
+volatile bool endEffect = false;        // stops current animation when interrupt occurs
 volatile uint8_t colorIndex = 0;
 volatile uint8_t effectIndex = 0;
 volatile bool redButtonState = true;    // buttons are active low, so start start high/true
 volatile bool whiteButtonState = true;
 volatile bool greenButtonState = true;
 
+
 /*
  * array of chosen colors to cycle through (strip.Color()
  * is used in setup() to calculate final color values passed
  * to the LED strip - so colors are not defined here)
  */
-#define NUM_OF_COLORS 12
-uint32_t COLORS[NUM_OF_COLORS];
+#define NUM_PRESET_COLORS 11
+uint32_t COLORS[NUM_PRESET_COLORS];
+
 
 /*
  * initialize pins, colors, LED strip, and serial communication
@@ -67,18 +83,17 @@ void setup() {
   Serial.begin(9600);
 
   // create colors that can be be cycled through
-  COLORS[0]  = strip.Color(  0, 127, 255);     // light blue
-  COLORS[1]  = strip.Color(  0,   0, 255);     // dark blue
-  COLORS[2]  = strip.Color(127,   0, 255);     // violet
-  COLORS[3]  = strip.Color(255,   0, 255);     // hot pink
-  COLORS[4]  = strip.Color(255,   0, 127);     // pink
-  COLORS[5]  = strip.Color(255,   0,   0);     // red
-  COLORS[6]  = strip.Color(255, 127,   0);     // orange
-  COLORS[7]  = strip.Color(255, 255,   0);     // yellow
-  COLORS[8]  = strip.Color(127, 255,   0);     // light green
+  COLORS[0] = strip.Color(255, 255, 255);      // white
+  COLORS[1]  = strip.Color(  0, 127, 255);     // light blue
+  COLORS[2]  = strip.Color(  0,   0, 255);     // dark blue
+  COLORS[3]  = strip.Color(127,   0, 255);     // violet
+  COLORS[4]  = strip.Color(255,   0, 255);     // hot pink
+  COLORS[5]  = strip.Color(255,   0, 127);     // pink
+  COLORS[6]  = strip.Color(255,   0,   0);     // red
+  COLORS[7]  = strip.Color(255, 127,   0);     // orange
+  COLORS[8]  = strip.Color(255, 255,   0);     // yellow
   COLORS[9]  = strip.Color(  0, 255,   0);     // dark green
-  COLORS[10] = strip.Color(  0, 255, 127);     // lime green
-  COLORS[11] = strip.Color(  0, 255, 255);     // cyan
+  COLORS[10] = strip.Color(  0, 255, 255);     // cyan
 
   // initialize button inputs
   pinMode(BUTTON_RED, INPUT);
@@ -108,6 +123,7 @@ void setup() {
   Serial.write("Initialization complete!");
 }
 
+
 /*
  * main program loop
  */
@@ -116,8 +132,9 @@ void loop() {
   // TODO implement button LED effects to notify color/effect/timer change will occur
   
   endEffect = false;    // run effect function until interrupt sets this true
-  EFFECTS[effectIndex](COLORS[colorIndex], DELAY_TIME);
+  EFFECTS[effectIndex](COLORS[colorIndex]);
 }
+
 
 /*
  * setup pin change interrupts on D10, D11, D12 (buttons)
@@ -136,7 +153,7 @@ ISR(PCINT0_vect) {
     if(redNewState == false && redButtonState == true){
       // red button pressed
       redButtonState = false;
-      colorIndex = (colorIndex == NUM_OF_COLORS - 1) ? 0 : colorIndex + 1;
+      colorIndex = (colorIndex == NUM_PRESET_COLORS - 1) ? 0 : colorIndex + 1;
       endEffect = true;   // color has changed, stop current effect being dispalyed
     }else if(redNewState == true and redButtonState == false){
       // red button released
@@ -159,70 +176,55 @@ ISR(PCINT0_vect) {
     // so button release will have functionality)
 }
 
+
+/*
+ * utility functions for effect functions
+ */
+// setting pixel to black color turns it off
+void clearStrip(){
+  fillStrip(strip.Color(0, 0, 0));
+}
+
+// get next hue in rainbow for rainbow effects
+long getNextRainbowHue(long currentPixelHue){
+  long nextPixelHue = currentPixelHue + COLOR_WHEEL_LEN / NUM_RAINBOW_COLORS;
+  return nextPixelHue % COLOR_WHEEL_LEN;  // if exceeded COLOR_WHEEL_LEN, wrap back into range
+}
+
+// convert an HSV value to a strip.Color value with gamma correction
+uint32_t hueToColor(long pixelHue){
+  return strip.gamma32(strip.ColorHSV(pixelHue));
+}
+
+// fill all pixels with color
+void fillStrip(uint32_t color){
+  for(int i = 0; i < LED_COUNT; i++) {
+    strip.setPixelColor(i, color);
+  }
+  strip.show();
+}
+
+
 /*
  * effect functions
  */
 // fill strip with single color
-void colorWipe(uint32_t color, int wait) {
-  while(!endEffect){
-      for(int i=0; i < strip.numPixels(); i++) {
-        strip.setPixelColor(i, color);
-        strip.show();
-        delay(wait);
-      }
-  }
+void linearFill(uint32_t color) {
+    for(int i=0; i < LED_COUNT and !endEffect; i++) {
+      strip.setPixelColor(i, color);
+      strip.show();
+      delay(50);
+    }
+    delay(1000);
+    clearStrip();
 }
 
-// Theater-marquee-style chasing lights
-void theaterChase(uint32_t color, int wait) {
-  for(int a=0; a<10; a++) {
-    for(int b=0; b<3; b++) {
-      strip.clear();
-      for(int c=b; c<strip.numPixels(); c += 3) {
-        strip.setPixelColor(c, color);
-      }
-      strip.show(); // Update strip with new contents
-      delay(wait);  // Pause for a moment
-    }
-  }
-}
-
-// Rainbow cycle along whole strip. Pass delay time (in ms) between frames.
-// TODO the wait being passed currently is way to long, need to divide by some constant
-void rainbow(uint32_t color, int wait) {
-  // Hue of first pixel runs 5 complete loops through the color wheel.
-  // Color wheel has a range of 65536 but it's OK if we roll over, so
-  // just count from 0 to 5*65536. Adding 256 to firstPixelHue each time
-  // means we'll make 5*65536/256 = 1280 passes through this outer loop:
-  for(long firstPixelHue = 0; firstPixelHue < 5*65536; firstPixelHue += 256) {
-    for(int i=0; i < strip.numPixels(); i++) { // For each pixel in strip...
-      int pixelHue = firstPixelHue + (i * 65536L / strip.numPixels());
-      strip.setPixelColor(i, strip.gamma32(strip.ColorHSV(pixelHue)));
-    }
-    strip.show();
-    delay(wait);
-  }
-}
-
-// Rainbow-enhanced theater marquee. Pass delay time (in ms) between frames.
-// TODO the wait being passed currently is way to long, need to divide by some constant
-void theaterChaseRainbow(uint32_t color, int wait) {
-  int firstPixelHue = 0;     // First pixel starts at red (hue 0)
-  for(int a=0; a<30; a++) {  // Repeat 30 times...
-    for(int b=0; b<3; b++) { //  'b' counts from 0 to 2...
-      strip.clear();         //   Set all pixels in RAM to 0 (off)
-      // 'c' counts up from 'b' to end of strip in increments of 3...
-      for(int c=b; c<strip.numPixels(); c += 3) {
-        // hue of pixel 'c' is offset by an amount to make one full
-        // revolution of the color wheel (range 65536) along the length
-        // of the strip (strip.numPixels() steps):
-        int      hue   = firstPixelHue + c * 65536L / strip.numPixels();
-        uint32_t color = strip.gamma32(strip.ColorHSV(hue)); // hue -> RGB
-        strip.setPixelColor(c, color); // Set pixel 'c' to value 'color'
-      }
-      strip.show();                // Update strip with new contents
-      delay(wait);                 // Pause for a moment
-      firstPixelHue += 65536 / 90; // One cycle of color wheel over 90 frames
-    }
+// fill entire strip with each rainbow color all at once
+void rainbowFull(uint32_t color) {
+  long pixelHue = 0;
+  for(int i = 0; i < NUM_RAINBOW_COLORS; i++){
+    pixelHue = getNextRainbowHue(pixelHue);
+    fillStrip(hueToColor(pixelHue));
+    delay(500);
   }
 }
