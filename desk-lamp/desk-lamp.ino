@@ -27,7 +27,7 @@ Adafruit_NeoPixel strip(LED_COUNT, LED_PIN, NEO_GRB + NEO_KHZ800);
 #define COLOR_WHEEL_LEN 65536           // for rainbow effects that use color wheel
 #define RAINBOW_RESOLUTION_FACTOR 4     
 #define NUM_RAINBOW_COLORS (LED_COUNT * RAINBOW_RESOLUTION_FACTOR)
-#define MINUTES_25 10000
+#define MINUTES_25 1500000
 
 
 /*
@@ -135,10 +135,7 @@ void loop() {
   // run pomodoro timer if active
   if(timerActive){
     flashButton(BUTTON_GREEN_LED);
-    digitalWrite(BUTTON_GREEN_LED, HIGH);
-    unsigned long startTime = millis();
-    while(millis() - startTime < MINUTES_25 and timerActive);
-    digitalWrite(BUTTON_GREEN_LED, LOW);
+    runTimer();
     timerActive = false;
   }
   // update effect color
@@ -178,13 +175,13 @@ ISR(PCINT0_vect) {
   bool greenNewState = digitalRead(BUTTON_GREEN);
   
   // check if red button was pressed (color change)
-  if(redNewState == false && redButtonState == true){
+  if(redNewState == false && redButtonState == true && !timerActive){
     colorChange = true;
     endEffect = true;   // color has changed, stop current effect being dispalyed
   }
 
   // check if white button was pressed (effect change)
-  if(whiteNewState == false && whiteButtonState == true){
+  if(whiteNewState == false && whiteButtonState == true && !timerActive){
     effectChange = true;
     endEffect = true;   // effect has changed, stop current effect being dispalyed
   }
@@ -219,9 +216,10 @@ void flashButton(byte pin){
 }
 
  
-// setting pixel to black color turns it off
+// same as strip.clear(), but also shows the strip
 void clearStrip(){
-  fillStrip(strip.Color(0, 0, 0));
+  strip.clear();
+  strip.show();
 }
 
 // get next hue in rainbow for rainbow effects
@@ -241,6 +239,62 @@ void fillStrip(uint32_t color){
     strip.setPixelColor(i, color);
   }
   strip.show();
+}
+
+// fill horizontal ring of LEDs (row 0 is lowest row)
+void fillRing(uint32_t color, int row){
+  strip.setPixelColor(row, color);
+  strip.setPixelColor(23 - row, color);
+  strip.setPixelColor(24 + row, color);
+  strip.setPixelColor(47 - row, color);
+  strip.setPixelColor(48 + row, color);
+  strip.show();
+}
+
+// display the pomodoro timer progress
+void runTimer(){
+  unsigned long startTime = millis();
+  while(millis() - startTime < MINUTES_25 and timerActive){
+    // diplay effect showing timer is running
+    for(int i = 0; i < 12 and timerActive; i++){
+      clearStrip();
+      fillRing(COLORS[3], i);
+      delay(500);
+    }
+
+    // display effect showing progress of timer (if timer hasn't completed already)
+    float progressPercentage = float (millis() - startTime) / MINUTES_25;
+    int rowsToFill = int (12 * progressPercentage);
+    if(rowsToFill < 12){
+      strip.clear();
+      for(int i = 0; i <= rowsToFill; i++){
+        fillRing(COLORS[3], i);
+      }
+      delay(1000);
+    }
+  }
+
+  // play finishing animation
+  timerCompleteAnimation();
+}
+
+// animation that is shown once pomodoro timer finishes
+void timerCompleteAnimation(){
+  clearStrip();
+  while(timerActive){
+    for(int i = 0; i < 6; i++){
+      delay(200);
+      fillRing(COLORS[5], 5 - i);
+      fillRing(COLORS[5], 6 + i);
+    }
+    delay(200);
+    for(int i = 0; i < 6; i++){
+      delay(200);
+      fillRing(strip.Color(0, 0 ,0), i);
+      fillRing(strip.Color(0, 0, 0), 11 - i);
+    }
+    delay(200);
+  }
 }
 
 
