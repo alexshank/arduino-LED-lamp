@@ -27,6 +27,7 @@ Adafruit_NeoPixel strip(LED_COUNT, LED_PIN, NEO_GRB + NEO_KHZ800);
 #define COLOR_WHEEL_LEN 65536           // for rainbow effects that use color wheel
 #define RAINBOW_RESOLUTION_FACTOR 4     
 #define NUM_RAINBOW_COLORS (LED_COUNT * RAINBOW_RESOLUTION_FACTOR)
+#define MINUTES_25 10000
 
 
 /*
@@ -58,7 +59,10 @@ const func_pointer EFFECTS[] = {          // array of pointers to each effect fu
 /*
  * variables used in interrupt service routine
  */
-volatile bool endEffect = false;        // stops current animation when interrupt occurs
+volatile bool endEffect = false;        // flags set in ISR
+volatile bool timerActive = false;
+volatile bool colorChange = false;
+volatile bool effectChange = false;
 volatile uint8_t colorIndex = 0;
 volatile uint8_t effectIndex = 0;
 volatile bool redButtonState = true;    // buttons are active low, so start start high/true
@@ -83,7 +87,7 @@ void setup() {
   Serial.begin(9600);
 
   // create colors that can be be cycled through
-  COLORS[0] = strip.Color(255, 255, 255);      // white
+  COLORS[0]  = strip.Color(255, 255, 255);      // white
   COLORS[1]  = strip.Color(  0, 127, 255);     // light blue
   COLORS[2]  = strip.Color(  0,   0, 255);     // dark blue
   COLORS[3]  = strip.Color(127,   0, 255);     // violet
@@ -128,10 +132,30 @@ void setup() {
  * main program loop
  */
 void loop() {
+  // run pomodoro timer if active
+  if(timerActive){
+    flashButton(BUTTON_GREEN_LED);
+    digitalWrite(BUTTON_GREEN_LED, HIGH);
+    unsigned long startTime = millis();
+    while(millis() - startTime < MINUTES_25 and timerActive);
+    digitalWrite(BUTTON_GREEN_LED, LOW);
+    timerActive = false;
+  }
+  // update effect color
+  else if(colorChange){
+    flashButton(BUTTON_RED_LED);
+    colorIndex = (colorIndex == NUM_PRESET_COLORS - 1) ? 0 : colorIndex + 1;
+    colorChange = false;
+  }
+  // update effect
+  else if(effectChange){
+    flashButton(BUTTON_WHITE_LED);
+    effectIndex = (effectIndex == NUM_OF_EFFECTS - 1) ? 0 : effectIndex + 1;
+    effectChange = false;
+  }
 
-  // TODO implement button LED effects to notify color/effect/timer change will occur
-  
-  endEffect = false;    // run effect function until interrupt sets this true
+  // run effect function until interrupt sets this true
+  endEffect = false;
   EFFECTS[effectIndex](COLORS[colorIndex]);
 }
 
@@ -148,38 +172,53 @@ void pciSetup(byte pin){
 
 // ISR for D8-D13
 ISR(PCINT0_vect) {
-    // check if red button was pressed (color change)
-    bool redNewState = digitalRead(BUTTON_RED);
-    if(redNewState == false && redButtonState == true){
-      // red button pressed
-      redButtonState = false;
-      colorIndex = (colorIndex == NUM_PRESET_COLORS - 1) ? 0 : colorIndex + 1;
-      endEffect = true;   // color has changed, stop current effect being dispalyed
-    }else if(redNewState == true and redButtonState == false){
-      // red button released
-      redButtonState = true;
-    }
+  // poll all button states
+  bool redNewState = digitalRead(BUTTON_RED);
+  bool whiteNewState = digitalRead(BUTTON_WHITE);
+  bool greenNewState = digitalRead(BUTTON_GREEN);
+  
+  // check if red button was pressed (color change)
+  if(redNewState == false && redButtonState == true){
+    colorChange = true;
+    endEffect = true;   // color has changed, stop current effect being dispalyed
+  }
 
-    // check if white button was pressed (effect change)
-    bool whiteNewState = digitalRead(BUTTON_WHITE);
-    if(whiteNewState == false && whiteButtonState == true){
-      // white button pressed
-      whiteButtonState = false;
-      effectIndex = (effectIndex == NUM_OF_EFFECTS - 1) ? 0 : effectIndex + 1;
-      endEffect = true;   // color has changed, stop current effect being dispalyed
-    }else if(whiteNewState == true and whiteButtonState == false){
-      // white button released
-      whiteButtonState = true;
-    }
+  // check if white button was pressed (effect change)
+  if(whiteNewState == false && whiteButtonState == true){
+    effectChange = true;
+    endEffect = true;   // effect has changed, stop current effect being dispalyed
+  }
 
-    // TODO check if green button input has changed (stationary button,
-    // so button release will have functionality)
+  // check if green button was pressed (start pomodoro timer)
+  if(greenNewState == false && greenButtonState == true){
+    timerActive = true;
+    endEffect = true;
+  }
+  // check if green button was released (end pomodoro timer)
+  else if(greenNewState == true && greenButtonState == false){
+    timerActive = false;
+  }
+
+  // update saved button states
+  redButtonState = redNewState;
+  whiteButtonState = whiteNewState;
+  greenButtonState = greenNewState;
 }
 
 
 /*
- * utility functions for effect functions
+ * utility functions
  */
+void flashButton(byte pin){
+  for(int i = 0; i < 4; i++){
+    digitalWrite(pin, HIGH);
+    delay(100);
+    digitalWrite(pin, LOW);
+    delay(100);
+  }
+}
+
+ 
 // setting pixel to black color turns it off
 void clearStrip(){
   fillStrip(strip.Color(0, 0, 0));
@@ -210,19 +249,19 @@ void fillStrip(uint32_t color){
  */
 // fill strip with single color
 void linearFill(uint32_t color) {
+    clearStrip();
     for(int i=0; i < LED_COUNT and !endEffect; i++) {
       strip.setPixelColor(i, color);
       strip.show();
       delay(50);
     }
     delay(1000);
-    clearStrip();
 }
 
 // fill entire strip with each rainbow color all at once
 void rainbowFull(uint32_t color) {
   long pixelHue = 0;
-  for(int i = 0; i < NUM_RAINBOW_COLORS; i++){
+  for(int i = 0; i < NUM_RAINBOW_COLORS and !endEffect; i++){
     pixelHue = getNextRainbowHue(pixelHue);
     fillStrip(hueToColor(pixelHue));
     delay(500);
