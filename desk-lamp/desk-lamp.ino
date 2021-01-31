@@ -46,11 +46,15 @@ Adafruit_NeoPixel strip(LED_COUNT, LED_PIN, NEO_GRB + NEO_KHZ800);
  * NOTE: problem with this method is that every function has
  * to have the same function signature (unused parameters at times)
  */
-#define NUM_OF_EFFECTS 2                  // used to wrap effectIndex back to first effect
+#define NUM_OF_EFFECTS 4                  // used to wrap effectIndex back to first effect
 typedef void (*func_pointer)(uint32_t);
-void linearFill(uint32_t);            // function prototypes for all effect functions
+void columnStrobe(uint32_t);            // function prototypes for all effect functions
+void ringStrobe(uint32_t);
+void linearFill(uint32_t);            
 void rainbowFull(uint32_t);
 const func_pointer EFFECTS[] = {          // array of pointers to each effect function
+  columnStrobe,
+  ringStrobe,
   linearFill,
   rainbowFull
 };
@@ -251,6 +255,14 @@ void fillRing(uint32_t color, int row){
   strip.show();
 }
 
+// fill horizontal ring of LEDs (row 0 is lowest row)
+void fillColumn(uint32_t color, int column){
+  for(int i = column*12; i < 12*column + 12; i++){
+    strip.setPixelColor(i, color);
+  }
+  strip.show();
+}
+
 // display the pomodoro timer progress
 void runTimer(){
   unsigned long startTime = millis();
@@ -267,7 +279,7 @@ void runTimer(){
     int rowsToFill = int (12 * progressPercentage);
     if(rowsToFill < 12){
       strip.clear();
-      for(int i = 0; i <= rowsToFill; i++){
+      for(int i = 0; i < rowsToFill; i++){
         fillRing(COLORS[3], i);
       }
       delay(1000);
@@ -301,6 +313,37 @@ void timerCompleteAnimation(){
 /*
  * effect functions
  */
+// strobe light created with alternating column indices
+void columnStrobe(uint32_t color) {
+    while(!endEffect) {
+      clearStrip();
+      fillColumn(color, 0);
+      fillColumn(color, 2);
+      fillColumn(color, 4);
+      delay(100);
+      clearStrip();
+      fillColumn(color, 1);
+      fillColumn(color, 3);
+      delay(100);
+    }
+}
+
+// strobe light created with alternating ring indices
+void ringStrobe(uint32_t color) {
+    while(!endEffect) {
+      clearStrip();
+      for(int i = 0; i < 12; i+=2){
+        fillRing(color, i);
+      }
+      delay(100);
+      clearStrip();
+      for(int i = 1; i < 12; i+=2){
+        fillRing(color, i);
+      }
+      delay(100);
+    }
+}
+
 // fill strip with single color
 void linearFill(uint32_t color) {
     clearStrip();
