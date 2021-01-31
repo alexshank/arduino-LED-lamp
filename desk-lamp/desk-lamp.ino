@@ -46,16 +46,20 @@ Adafruit_NeoPixel strip(LED_COUNT, LED_PIN, NEO_GRB + NEO_KHZ800);
  * NOTE: problem with this method is that every function has
  * to have the same function signature (unused parameters at times)
  */
-#define NUM_OF_EFFECTS 4                  // used to wrap effectIndex back to first effect
+#define NUM_OF_EFFECTS 6                  // used to wrap effectIndex back to first effect
 typedef void (*func_pointer)(uint32_t);
 void columnStrobe(uint32_t);            // function prototypes for all effect functions
 void ringStrobe(uint32_t);
+void rainbowVertical(uint32_t);
+void wrapFill(uint32_t);
 void linearFill(uint32_t);            
 void rainbowFull(uint32_t);
-const func_pointer EFFECTS[] = {          // array of pointers to each effect function
+const func_pointer EFFECTS[] = {          // array of pointers to each effect function (controls order for cycling through)
+  rainbowVertical,
+  wrapFill,
+  linearFill,
   columnStrobe,
   ringStrobe,
-  linearFill,
   rainbowFull
 };
 
@@ -232,6 +236,12 @@ long getNextRainbowHue(long currentPixelHue){
   return nextPixelHue % COLOR_WHEEL_LEN;  // if exceeded COLOR_WHEEL_LEN, wrap back into range
 }
 
+// get hue multiple steps forward in the rainbow
+long jumpToRainbowHue(long currentPixelHue, int hueStep){
+  long nextPixelHue = currentPixelHue + hueStep * (COLOR_WHEEL_LEN / NUM_RAINBOW_COLORS);
+  return nextPixelHue % COLOR_WHEEL_LEN;  // if exceeded COLOR_WHEEL_LEN, wrap back into range
+}
+
 // convert an HSV value to a strip.Color value with gamma correction
 uint32_t hueToColor(long pixelHue){
   return strip.gamma32(strip.ColorHSV(pixelHue));
@@ -309,6 +319,13 @@ void timerCompleteAnimation(){
   }
 }
 
+// set a pixel color, show it on the strip, and delay
+void setShowDelayPixel(uint32_t color, int i, int delayTime){
+  strip.setPixelColor(i, color);
+  strip.show();
+  delay(delayTime);
+}
+
 
 /*
  * effect functions
@@ -320,11 +337,11 @@ void columnStrobe(uint32_t color) {
       fillColumn(color, 0);
       fillColumn(color, 2);
       fillColumn(color, 4);
-      delay(100);
+      delay(250);
       clearStrip();
       fillColumn(color, 1);
       fillColumn(color, 3);
-      delay(100);
+      delay(250);
     }
 }
 
@@ -335,12 +352,12 @@ void ringStrobe(uint32_t color) {
       for(int i = 0; i < 12; i+=2){
         fillRing(color, i);
       }
-      delay(100);
+      delay(250);
       clearStrip();
       for(int i = 1; i < 12; i+=2){
         fillRing(color, i);
       }
-      delay(100);
+      delay(250);
     }
 }
 
@@ -351,8 +368,37 @@ void linearFill(uint32_t color) {
       strip.setPixelColor(i, color);
       strip.show();
       delay(50);
+      if(i == LED_COUNT - 1) delay(1000);
     }
-    delay(1000);
+}
+
+// fill strip with wrapping pattern going upwards
+void wrapFill(uint32_t color) {
+    clearStrip();
+    int wrapDelay = 75;
+    for(int i=0; i < 12 and !endEffect; i++) {
+      setShowDelayPixel(color, i, wrapDelay);
+      setShowDelayPixel(color, 23 - i, wrapDelay);
+      setShowDelayPixel(color, 24 + i, wrapDelay);
+      setShowDelayPixel(color, 47 - i, wrapDelay);
+      setShowDelayPixel(color, 48 + i, wrapDelay);
+      if(i == 11) delay(1000);
+    }
+}
+
+// cycle through the rainbow on each column
+void rainbowVertical(uint32_t color){
+    long bottomHue = 0;
+    while(!endEffect){
+      long tempHue = bottomHue;
+      for(int i = 0; i < 12; i++){
+        tempHue = jumpToRainbowHue(tempHue, 2); // need more noticable difference between
+                                                // top pixel and bottom pixel hues
+        fillRing(hueToColor(tempHue), i);
+      }
+      bottomHue = getNextRainbowHue(bottomHue);
+      delay(100);
+    }
 }
 
 // fill entire strip with each rainbow color all at once
