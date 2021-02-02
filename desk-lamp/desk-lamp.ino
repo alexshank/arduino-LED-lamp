@@ -46,17 +46,19 @@ Adafruit_NeoPixel strip(LED_COUNT, LED_PIN, NEO_GRB + NEO_KHZ800);
  * NOTE: problem with this method is that every function has
  * to have the same function signature (unused parameters at times)
  */
-#define NUM_OF_EFFECTS 7                  // used to wrap effectIndex back to first effect
+#define NUM_OF_EFFECTS 8                  // used to wrap effectIndex back to first effect
 typedef void (*func_pointer)(uint32_t);
 void columnStrobe(uint32_t);            // function prototypes for all effect functions
 void ringStrobe(uint32_t);
 void car(uint32_t);
+void lighthouse(uint32_t);
 void rainbowVertical(uint32_t);
 void wrapFill(uint32_t);
 void linearFill(uint32_t);            
 void rainbowFull(uint32_t);
 const func_pointer EFFECTS[] = {          // array of pointers to each effect function (controls order for cycling through)
   rainbowVertical,
+  lighthouse,
   car,
   wrapFill,
   linearFill,
@@ -368,6 +370,16 @@ void car(uint32_t color){
   setShowDelayPixel(color, 0, 50);
   strip.setPixelColor(pixel3, strip.Color(0, 0, 0));
   setShowDelayPixel(color, 1, 50);
+}
+
+
+// fill a single column at a time in a rotating pattern
+void lighthouse(uint32_t color) {
+  for(int i = 0; i < 5 && !endEffect; i++) {
+    strip.clear();
+    fillColumn(color, i);
+    delay(200);
+  }
 }
 
 // strobe light created with alternating column indices
