@@ -46,16 +46,18 @@ Adafruit_NeoPixel strip(LED_COUNT, LED_PIN, NEO_GRB + NEO_KHZ800);
  * NOTE: problem with this method is that every function has
  * to have the same function signature (unused parameters at times)
  */
-#define NUM_OF_EFFECTS 6                  // used to wrap effectIndex back to first effect
+#define NUM_OF_EFFECTS 7                  // used to wrap effectIndex back to first effect
 typedef void (*func_pointer)(uint32_t);
 void columnStrobe(uint32_t);            // function prototypes for all effect functions
 void ringStrobe(uint32_t);
+void car(uint32_t);
 void rainbowVertical(uint32_t);
 void wrapFill(uint32_t);
 void linearFill(uint32_t);            
 void rainbowFull(uint32_t);
 const func_pointer EFFECTS[] = {          // array of pointers to each effect function (controls order for cycling through)
   rainbowVertical,
+  car,
   wrapFill,
   linearFill,
   columnStrobe,
@@ -330,6 +332,44 @@ void setShowDelayPixel(uint32_t color, int i, int delayTime){
 /*
  * effect functions
  */
+// set of three pixels that move through all 60 LEDs
+void car(uint32_t color){
+  // keep track of the previous three pixels shown
+  int pixel2 = 2; int pixel3 = 1; int pixel4 = 0;
+
+  // show first three needed pixels (the car)
+  strip.clear();
+  strip.setPixelColor(pixel2, color);
+  strip.setPixelColor(pixel3, color);
+  strip.setPixelColor(pixel4, color);
+  strip.show();
+  delay(50);
+
+  /*
+   * move the car along by lighting up a new LED and
+   * turning off the oldest LED
+   */
+  // first pass through follows natural "snake" indexing
+  for(int leadingPixel = 3; leadingPixel < LED_COUNT && !endEffect; leadingPixel++){
+    strip.setPixelColor(pixel4, strip.Color(0, 0, 0));        // turn off trailing LED
+    setShowDelayPixel(color, leadingPixel, 50);              // turn on next LED
+    pixel4 = pixel3; pixel3 = pixel2; pixel2 = leadingPixel;  // update LED history
+  }
+  // second pass through opposes natural "snake" indexing
+  for(int leadingPixel = 11; leadingPixel != 70 && !endEffect; leadingPixel--){
+    strip.setPixelColor(pixel4, strip.Color(0, 0, 0));        // turn off trailing LED
+    setShowDelayPixel(color, leadingPixel, 50);              // turn on next LED
+    pixel4 = pixel3; pixel3 = pixel2; pixel2 = leadingPixel;  // update LED history
+    if(leadingPixel % 12 == 0) leadingPixel += 23;            // just the inherent math of the reversed pattern
+  }
+
+  // manually smooth transition from reverse snaking back to normal snaking pattern
+  strip.setPixelColor(pixel4, strip.Color(0, 0, 0));
+  setShowDelayPixel(color, 0, 50);
+  strip.setPixelColor(pixel3, strip.Color(0, 0, 0));
+  setShowDelayPixel(color, 1, 50);
+}
+
 // strobe light created with alternating column indices
 void columnStrobe(uint32_t color) {
     while(!endEffect) {
@@ -368,7 +408,8 @@ void linearFill(uint32_t color) {
       strip.setPixelColor(i, color);
       strip.show();
       delay(50);
-      if(i == LED_COUNT - 1) delay(1000);
+      if(i == LED_COUNT - 1) delay(1000); // in loop so that endEffect == true doesn't
+                                          // break into a 1 second delay
     }
 }
 
