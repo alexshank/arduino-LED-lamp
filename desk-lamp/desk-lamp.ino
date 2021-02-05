@@ -280,9 +280,9 @@ void fillColumn(uint32_t color, int column){
 // display the pomodoro timer progress
 void runTimer(){
   unsigned long startTime = millis();
-  while(millis() - startTime < MINUTES_25 and timerActive){
+  while(millis() - startTime < MINUTES_25 && timerActive){
     // diplay effect showing timer is running
-    for(int i = 0; i < 12 and timerActive; i++){
+    for(int i = 0; i < 12 && timerActive; i++){
       clearStrip();
       fillRing(COLORS[3], i);
       delay(500);
@@ -416,7 +416,7 @@ void ringStrobe(uint32_t color) {
 // fill strip with single color
 void linearFill(uint32_t color) {
     clearStrip();
-    for(int i=0; i < LED_COUNT and !endEffect; i++) {
+    for(int i=0; i < LED_COUNT && !endEffect; i++) {
       strip.setPixelColor(i, color);
       strip.show();
       delay(50);
@@ -429,7 +429,7 @@ void linearFill(uint32_t color) {
 void wrapFill(uint32_t color) {
     clearStrip();
     int wrapDelay = 75;
-    for(int i=0; i < 12 and !endEffect; i++) {
+    for(int i=0; i < 12 && !endEffect; i++) {
       setShowDelayPixel(color, i, wrapDelay);
       setShowDelayPixel(color, 23 - i, wrapDelay);
       setShowDelayPixel(color, 24 + i, wrapDelay);
@@ -457,7 +457,7 @@ void rainbowVertical(uint32_t color){
 // fill entire strip with each rainbow color all at once
 void rainbowFull(uint32_t color) {
   long pixelHue = 0;
-  for(int i = 0; i < NUM_RAINBOW_COLORS and !endEffect; i++){
+  for(int i = 0; i < NUM_RAINBOW_COLORS && !endEffect; i++){
     pixelHue = getNextRainbowHue(pixelHue);
     fillStrip(hueToColor(pixelHue));
     delay(500);
